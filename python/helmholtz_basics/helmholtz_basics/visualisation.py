@@ -1,8 +1,6 @@
-"""Optional Matplotlib-based plotting helpers."""
-
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Protocol, Sequence, TYPE_CHECKING
 
 import numpy as np
 
@@ -11,7 +9,16 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover
     plt = None  # type: ignore
 
-from .solvers import SolverResult
+class _SolverResultProtocol(Protocol):
+    """Minimal surface required from solver outputs for plotting."""
+
+    residuals: Sequence[float]
+
+
+if TYPE_CHECKING:  # pragma: no cover - used only for static analysis
+    from .solvers import SolverResult as SolverResult  # noqa: F401
+else:
+    SolverResult = _SolverResultProtocol
 
 
 def plot_residuals(result: SolverResult, *, ax: "plt.Axes | None" = None) -> "plt.Axes | None":
@@ -42,3 +49,21 @@ def plot_field(field: np.ndarray, shape: Iterable[int], *, ax: "plt.Axes | None"
     else:
         raise ValueError("plot_field supports 1D or 2D data only")
     return ax
+
+
+if __name__ == "__main__":  # pragma: no cover - guidance for direct execution
+    import textwrap
+
+    message = textwrap.dedent(
+        """
+        These plotting helpers are meant to be imported from Python (for example
+        `from helmholtz_basics.visualisation import plot_residuals`).
+
+        If you would like to take them for a quick spin from the command line,
+        `cd` into the `python/` directory of the repository (or add it to your
+        `PYTHONPATH`) and run `python -m helmholtz_basics.visualisation`.  You
+        can also open a Python or notebook session and import the functions
+        there.
+        """
+    ).strip()
+    print(message)
