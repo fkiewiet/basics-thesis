@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
+from typing import Callable, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple
+
+if False:  # pragma: no cover - imported for typing only
+    from .loads import Load
+    from .operators import Discretisation
+    from .solvers import SolverResult
 
 
 @dataclass(frozen=True)
@@ -15,51 +20,55 @@ class GridSpec:
     lengths: Tuple[float, ...]
 
     def __post_init__(self) -> None:
-        if self.dims < 1 or self.dims > 3:
+        if not (1 <= self.dims <= 3):
             raise ValueError("Only 1D, 2D, or 3D grids are supported")
         if len(self.shape) != self.dims:
-            raise ValueError("shape must provide one entry per dimension")
+            raise ValueError("shape must match the number of dimensions")
         if len(self.lengths) != self.dims:
-            raise ValueError("lengths must provide one entry per dimension")
+            raise ValueError("lengths must match the number of dimensions")
         if any(n <= 1 for n in self.shape):
-            raise ValueError("each grid dimension must have more than one node")
+            raise ValueError("each dimension needs at least two nodes")
         if any(L <= 0 for L in self.lengths):
             raise ValueError("domain lengths must be positive")
 
     @property
     def spacing(self) -> Tuple[float, ...]:
+        """Return the mesh spacing for each dimension."""
+
         return tuple(L / (n - 1) for L, n in zip(self.lengths, self.shape))
 
+    @property
+    def size(self) -> int:
+        """Total number of grid points."""
 
-@dataclass(frozen=True)
-class BoundarySpec:
-    """Placeholder for boundary conditions."""
-
-    kind: str = "dirichlet"
-    value: float = 0.0
+        total = 1
+        for n in self.shape:
+            total *= n
+        return total
 
 
 @dataclass(frozen=True)
 class HelmholtzConfig:
-    """Collects the ingredients for a single solve."""
+    """Collect the ingredients for a single solve."""
 
     wavenumber: float
     grid: GridSpec
     load: "Load"
     discretisation: "Discretisation"
-    boundary: BoundarySpec = BoundarySpec()
+    label: Optional[str] = None
+    metadata: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class SweepConfig:
-    """Describe parameter sweeps for experiments."""
+    """Describe a Cartesian product of parameters for experiments."""
 
     grids: Sequence[GridSpec]
     wavenumbers: Sequence[float]
     loads: Sequence["Load"]
     discretisations: Sequence["Discretisation"]
-    metadata: Dict[str, object] = field(default_factory=dict)
-    hook: Optional[Callable[["HelmholtzConfig", "SolverResult"], None]] = None
+    hook: Optional[Callable[[HelmholtzConfig, "SolverResult"], None]] = None
+    annotations: MutableMapping[str, object] = field(default_factory=dict)
 
     def iter_configs(self) -> Iterable[HelmholtzConfig]:
         for grid in self.grids:
@@ -71,12 +80,5 @@ class SweepConfig:
                             grid=grid,
                             load=load,
                             discretisation=disc,
-                            boundary=BoundarySpec(),
+                            metadata=self.annotations,
                         )
-
-
-# Type checking support via forward references
-if False:  # pragma: no cover
-    from .loads import Load
-    from .operators import Discretisation
-    from .solvers import SolverResult

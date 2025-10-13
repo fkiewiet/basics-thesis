@@ -1,74 +1,71 @@
-# Modularising the Helmholtz GMRES project
+# Python-first layout for Helmholtz + GMRES experiments
 
-This repository currently contains the exploratory notebook
-`Helmholtz_GMRES_Julia_MSc.ipynb`.  To support experiments with different
-spatial dimensions, grid sizes, frequencies, right-hand sides, and
-alternative discretisations, treat the notebook as a consumer of a small
-library housed in `src/`.
+The repository used to experiment with a Julia module split, but the active
+codebase is now entirely Python.  Everything lives under
+`python/helmholtz_basics/`, and the goal is to give notebooks and command-line
+scripts a consistent set of helpers for exploring different spatial dimensions,
+grid sizes, wavenumbers, loads, and discretisations.
 
-## Proposed layout
+## Package map
 
 ```
-src/
-  BasicsHelmholtz.jl     # umbrella module re-exporting public API
-  types.jl               # declarative data containers (grid, boundary, load)
-  grids.jl               # coordinate generation utilities
-  operators.jl           # discretisation definitions and matrix assembly
-  loads.jl               # right-hand side factories
-  solvers.jl             # GMRES and related Krylov solvers
-  experiments.jl         # orchestration helpers for parameter sweeps
-  visualisation.jl       # plotting hooks kept optional
+python/helmholtz_basics/
+  __init__.py        # convenience exports for interactive use
+  config.py          # dataclasses describing grids, problems, and sweeps
+  grid.py            # mesh/coordinate generation utilities
+  loads.py           # right-hand side factories (point, plane wave, random)
+  operators.py       # finite-difference Helmholtz assembly in 1/2/3D
+  solvers.py         # GMRES wrapper + solver options
+  experiments.py     # small driver that loops through sweep combinations
+  visualisation.py   # optional Matplotlib helpers for results
 ```
 
-Notebooks and scripts should `include("src/BasicsHelmholtz.jl")` and then call
-high-level helpers such as `solve_helmholtz` or `run_experiment!`.  All heavy
-lifting happens inside the library modules so that functionality is shareable
-across multiple front-ends.
+You can import the package in a notebook or script and reach for the pieces you
+need:
 
-## Extending by dimension
-
-The `GridSpec` object stores dimension, lengths, and discrete shape in a single
-place.  This allows you to create configurations such as:
-
-```julia
-GridSpec(dims = 1, lengths = (1.0, 0.0, 0.0), shape = (512, 1, 1))
-GridSpec(dims = 2, lengths = (1.0, 1.0, 0.0), shape = (256, 256, 1))
-GridSpec(dims = 3, lengths = (1.0, 1.0, 1.0), shape = (64, 64, 64))
+```python
+from helmholtz_basics import (
+    GridSpec,
+    FiniteDifference,
+    PointSource,
+    gmres_solve,
+)
 ```
 
-Grid-dependent logic should use the first `spec.dims` entries in each tuple so
-functions naturally degrade from 3D to 2D and 1D without rewriting code.
+The public API prefers plain dataclasses and protocols so it is straightforward
+to add your own load type or discretisation without editing existing files.
 
-## Managing discretisations
+## Handling different dimensions and grids
 
-Implement each spatial discretisation as a subtype of `Discretisation`.  For
-finite differences, use small concrete structs such as `FivePointStencil` and
-specialise `assemble_operator`.  Alternative discretisations—finite elements,
-discontinuous Galerkin, or PML-augmented operators—can register their own
-subtypes and overloads without modifying existing files.
+`GridSpec` records both the number of dimensions and the shape/lengths per axis.
+It provides convenience properties such as `spacing` and `size`, so assembly
+routines only need to look at `spec.dims` entries.  The same `FiniteDifference`
+class handles 1D, 2D, and 3D because helper functions iterate over the axes.
 
-## Right-hand sides
+## Loads and discretisations
 
-Similarly, declare each forcing term as a subtype of `Load`.  The `build_load`
-dispatch allows custom behaviour per load (e.g. mapping a physical point source
-to the closest grid node, drawing random fields, or injecting phase-controlled
-plane waves).  Keeping loads distinct makes it easy to compose experiments that
-sweep through source types.
+Loads implement a light `Load` protocol with a `build(grid)` method.  The built
+ins cover point sources, phase-controlled plane waves, and random draws.  New
+sources only need to honour the protocol.  Discretisations do the same via a
+`Discretisation` protocol—`FiniteDifference` ships with a standard second-order
+stencil, and alternate schemes (higher order, absorbing layers, FEM wrappers)
+can be dropped in beside it.
 
-## Experiment orchestration
+## Sweep orchestration
 
-The `ExperimentConfig` container captures the cross-product of parameters.  A
-single call to `run_experiment!` can sweep through grids, discretisations,
-frequencies, and loads, handing the results to a callback for logging, plotting,
-or saving to disk.  This isolates scientific questions from plumbing code and
-encourages reproducibility.
+`SweepConfig` holds the Cartesian product of parameters you want to explore and
+an optional callback hook for logging.  `run_experiment` assembles the operator,
+builds the right-hand side, calls the solver, and yields a record per case.  The
+records are plain dictionaries so downstream code can serialise them, compute
+statistics, or plot without ceremony.
 
-## Next steps
+## Suggested workflow
 
-1. Port the existing notebook functions into the appropriate modules.
-2. Replace placeholder implementations (identity operator, zero solution) with
-   working finite-difference assembly and GMRES logic.
-3. Write lightweight tests that exercise the modules in `src/` so future
-   refactors remain safe.
-4. Gradually move plotting helpers into `visualisation.jl`, allowing the
-   notebook to focus on narrative and analysis rather than implementation.
+1. Start in a notebook or script and `from helmholtz_basics import *` the pieces
+   you need.
+2. Create a `GridSpec`, choose a `FiniteDifference` discretisation, and pick one
+   of the load factories (or implement your own).
+3. Run individual solves with `gmres_solve` while prototyping, then switch to a
+   `SweepConfig` and `run_experiment` once you want to study trends.
+4. Use the optional plotting helpers in `visualisation.py` to keep quick-look
+   figures separate from the solver core.

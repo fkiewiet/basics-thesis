@@ -1,23 +1,31 @@
-# Python companion outline
+# Python toolkit in plain words
 
-I sketched a small Python package in `python/helmholtz_basics/` so the Julia
-notebook has a twin that feels familiar.  The folder mirrors the Julia modules:
-configuration dataclasses live in `config.py`, grids in `grid.py`, operators in
-`operators.py`, and so on.  Everything is wired together through the package's
-`__init__` so you can write imports such as:
+The working code now lives entirely in `python/helmholtz_basics/`.  Think of it
+as a tray of Lego bricks: grids, operators, loads, solvers, and a tiny
+experiment runner.  You only grab the bricks you need for the question at hand.
+
+The package exports the usual suspects through `__init__.py`, so quick-start
+imports stay short:
 
 ```python
 from helmholtz_basics import GridSpec, FiniteDifference, PointSource, gmres_solve
 ```
 
-The stubs already cover the things we talked about tweaking—dimensions, grid
-sizes, wavenumbers, and different loads.  Right now the defaults use a simple
-second-order finite difference scheme, but you can add new discretisations by
-creating another class with an `assemble` method.  Experiments are handled by a
-small sweep helper that loops over every combination of parameters and hands
-results to an optional callback for logging or plotting.
+- `config.py` keeps the small dataclasses that describe grids and parameter
+  sweeps.
+- `grid.py` turns those specs into NumPy coordinate arrays when you want to
+  inspect or plot a field.
+- `operators.py` currently offers a second-order finite-difference
+  discretisation that works in 1D, 2D, or 3D.  Drop a new class in the same file
+  if you fancy higher order stencils or absorbing layers.
+- `loads.py` holds the right-hand side factories—point sources, plane waves, and
+  a quick random generator for stress tests.
+- `solvers.py` wraps SciPy's GMRES so you always get back the solution together
+  with the residual history.
+- `experiments.py` wires the pieces into a simple sweep loop and optionally lets
+  you log or plot each run via a callback.
 
-Once SciPy and Matplotlib are available, the code is ready for real runs.  The
-plan is to port pieces from the notebook into these modules one at a time so we
-keep the story in the write-up clear while the heavy lifting happens in tidy,
-testable Python files.
+Once SciPy and Matplotlib are installed, you can run small scripts straight away
+or keep working from notebooks.  The aim is to keep the notebook narrative light
+and move the heavy lifting into these modules where it is easier to maintain and
+extend.

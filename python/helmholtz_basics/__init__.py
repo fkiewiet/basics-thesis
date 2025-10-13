@@ -1,6 +1,6 @@
 """Python companion package for modular Helmholtz GMRES experiments."""
 
-from .config import GridSpec, BoundarySpec, HelmholtzConfig, SweepConfig
+from .config import GridSpec, HelmholtzConfig, SweepConfig
 from .grid import build_grid
 from .operators import (
     Discretisation,
@@ -8,12 +8,11 @@ from .operators import (
     assemble_operator,
 )
 from .loads import Load, PointSource, PlaneWaveSource, RandomSource, build_load
-from .solvers import SolverResult, gmres_solve
+from .solvers import GMRESOptions, SolverResult, gmres_solve
 from .experiments import run_experiment
 
 __all__ = [
     "GridSpec",
-    "BoundarySpec",
     "HelmholtzConfig",
     "SweepConfig",
     "build_grid",
@@ -26,6 +25,7 @@ __all__ = [
     "RandomSource",
     "build_load",
     "SolverResult",
+    "GMRESOptions",
     "gmres_solve",
     "run_experiment",
 ]
