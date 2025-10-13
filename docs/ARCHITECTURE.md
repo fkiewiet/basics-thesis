@@ -7,7 +7,9 @@ scripts a consistent set of helpers for exploring different spatial dimensions,
 grid sizes, wavenumbers, loads, and discretisations.  The Jupyter side mirrors
 that modularity: the `notebooks/` directory contains five short notebooks that
 each focus on one step of the workflow (see [`docs/NOTEBOOKS.md`](NOTEBOOKS.md)
-for a quick index).
+for a quick index).  For a text-first view you can grab the matching
+`notebooks/cell_exports/*_cells.py` files, which keep the same cell boundaries
+while living in plain Python.
 
 ## Package map
 
