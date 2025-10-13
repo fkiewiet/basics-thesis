@@ -29,3 +29,8 @@ Once SciPy and Matplotlib are installed, you can run small scripts straight away
 or keep working from notebooks.  The aim is to keep the notebook narrative light
 and move the heavy lifting into these modules where it is easier to maintain and
 extend.
+
+Prefer to tinker in Jupyter?  Head to the `notebooks/` folder.  It now contains
+an introduction plus four short companions that mirror the steps above: grid
+building, single solves, parameter sweeps, and plotting.  Copy a cell, tweak a
+parameter, and keep iterating without scrolling through a monolithic notebook.

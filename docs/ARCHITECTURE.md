@@ -4,7 +4,10 @@ The repository used to experiment with a Julia module split, but the active
 codebase is now entirely Python.  Everything lives under
 `python/helmholtz_basics/`, and the goal is to give notebooks and command-line
 scripts a consistent set of helpers for exploring different spatial dimensions,
-grid sizes, wavenumbers, loads, and discretisations.
+grid sizes, wavenumbers, loads, and discretisations.  The Jupyter side mirrors
+that modularity: the `notebooks/` directory contains five short notebooks that
+each focus on one step of the workflow (see [`docs/NOTEBOOKS.md`](NOTEBOOKS.md)
+for a quick index).
 
 ## Package map
 
