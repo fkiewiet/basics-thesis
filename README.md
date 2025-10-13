@@ -11,6 +11,16 @@ package.
   operator assembly, right-hand sides, GMRES wrappers, and a small experiment
   runner.  Import what you need and stay focused on the physics you want to
   poke at.
+  - **Shell tip**: start a Python interpreter before using the package API.
+    Typing `from .config import ...` straight into PowerShell or bash will raise
+    syntax errors because the shell itself is not Python.  Instead run:
+
+    ```text
+    cd basics-thesis
+    python          # opens the interpreter (" >>> " prompt)
+    >>> import helmholtz_basics as hb
+    >>> hb.GridSpec(dim=2, shape=(64, 64), spacing=0.02)
+    ```
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) summarises how the package is
   organised and the kind of variations it already supports (dimension, grid
   size, frequency, loads, and discretisations).

@@ -5,7 +5,9 @@ as a tray of Lego bricks: grids, operators, loads, solvers, and a tiny
 experiment runner.  You only grab the bricks you need for the question at hand.
 
 The package exports the usual suspects through `__init__.py`, so quick-start
-imports stay short:
+imports stay short.  Open a Python interpreter (``python`` on macOS/Linux,
+``py`` on Windows) _before_ running the import; shells like PowerShell will throw
+syntax errors if you paste Python directly into them.
 
 ```python
 from helmholtz_basics import GridSpec, FiniteDifference, PointSource, gmres_solve
