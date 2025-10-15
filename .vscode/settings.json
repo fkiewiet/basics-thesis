@@ -1,0 +1,12 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.envFile": "${workspaceFolder}\\.env",
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+  "jupyter.environmentVariables": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ]
+}
+
