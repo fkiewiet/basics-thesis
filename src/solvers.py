@@ -40,24 +40,34 @@ def gmres_solve(
     options: Optional[GMRESOptions] = None,
     callback: Optional[Callable[[np.ndarray], None]] = None,
 ) -> SolverResult:
-    """Wrap SciPy's GMRES with a friendlier result object."""
+    """Wrap SciPy's GMRES; works with both tol and rtol/atol SciPy versions."""
+    from scipy.sparse.linalg import gmres as scipy_gmres
+    import inspect
 
     opts = options or GMRESOptions()
     residuals: list[float] = []
 
     def _callback(residual: np.ndarray) -> None:
-        norm = float(np.linalg.norm(residual))
-        residuals.append(norm)
+        residuals.append(float(np.linalg.norm(residual)))
         if callback is not None:
             callback(residual)
 
-    solution, info = scipy_gmres(
-        matrix,
-        rhs,
+    # Build kwargs robustly
+    sig = inspect.signature(scipy_gmres).parameters
+    kwargs = dict(
         restart=opts.restart,
-        tol=opts.tol,
         maxiter=opts.maxiter,
         callback=_callback,
     )
-    converged = info == 0
-    return SolverResult(solution=solution, residuals=residuals, converged=converged, info=info)
+
+    # Only pass tolerances if user provided one; else use SciPy defaults
+    if opts.tol is not None:
+        if "rtol" in sig:         # newer SciPy
+            kwargs["rtol"] = float(opts.tol)
+            kwargs["atol"] = 0.0
+        elif "tol" in sig:        # older SciPy
+            kwargs["tol"] = float(opts.tol)
+
+    solution, info = scipy_gmres(matrix, rhs, **kwargs)
+    return SolverResult(solution=solution, residuals=residuals, converged=(info == 0), info=info)
+

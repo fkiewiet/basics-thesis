@@ -128,6 +128,19 @@ def laplacian_operator(
     cfg = FDConfig(bc=BC.parse(bc), dtype=np.dtype(dtype))
     return _assemble_laplacian_fd(grid, cfg)
 
+def assemble_operator(
+    discretisation: Discretisation,
+    grid: GridSpec,
+    wavenumber: float
+) -> "sparse.spmatrix":
+    """Legacy helper for notebooks expecting assemble_operator().
+
+    Simply calls discretisation.assemble(grid, wavenumber).
+    """
+    _ensure_sparse()
+    return discretisation.assemble(grid, wavenumber)
+
+
 
 # --------------------------------------------------------------------------- #
 # Class form (kept for convenience + backward compatibility)
