@@ -29,7 +29,7 @@ class GMRESOptions:
     """Basic knobs exposed for GMRES runs."""
 
     restart: Optional[int] = None
-    tol: float = 1e-8
+    tol: float = 1e-6
     maxiter: Optional[int] = None
 
 
@@ -40,19 +40,24 @@ def gmres_solve(
     options: Optional[GMRESOptions] = None,
     callback: Optional[Callable[[np.ndarray], None]] = None,
 ) -> SolverResult:
-    """Wrap SciPy's GMRES; works with both tol and rtol/atol SciPy versions."""
+    """Wrap SciPy's GMRES; logs relative residuals and is compatible with tol / rtol APIs."""
     from scipy.sparse.linalg import gmres as scipy_gmres
     import inspect
+    import numpy as np
 
     opts = options or GMRESOptions()
     residuals: list[float] = []
 
+    # relative residual logging: ||r|| / ||b||
+    b_norm = float(np.linalg.norm(rhs)) or 1.0  # guard against zero RHS
+
     def _callback(residual: np.ndarray) -> None:
-        residuals.append(float(np.linalg.norm(residual)))
+        norm_rel = float(np.linalg.norm(residual) / b_norm)
+        residuals.append(norm_rel)
         if callback is not None:
             callback(residual)
 
-    # Build kwargs robustly
+    # Build kwargs to match the installed SciPy signature
     sig = inspect.signature(scipy_gmres).parameters
     kwargs = dict(
         restart=opts.restart,
@@ -60,14 +65,15 @@ def gmres_solve(
         callback=_callback,
     )
 
-    # Only pass tolerances if user provided one; else use SciPy defaults
     if opts.tol is not None:
-        if "rtol" in sig:         # newer SciPy
-            kwargs["rtol"] = float(opts.tol)
-            kwargs["atol"] = 0.0
-        elif "tol" in sig:        # older SciPy
-            kwargs["tol"] = float(opts.tol)
+        if "rtol" in sig:        # newer SciPy
+            kwargs["rtol"] = float(opts.tol)   # relative tolerance
+            kwargs["atol"] = 0.0               # no absolute floor
+        else:                      # older SciPy
+            kwargs["tol"] = float(opts.tol)    # legacy single tol
 
     solution, info = scipy_gmres(matrix, rhs, **kwargs)
-    return SolverResult(solution=solution, residuals=residuals, converged=(info == 0), info=info)
+    converged = (info == 0)
+    return SolverResult(solution=solution, residuals=residuals, converged=converged, info=info)
+
 

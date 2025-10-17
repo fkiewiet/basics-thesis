@@ -21,16 +21,20 @@ else:
     SolverResult = _SolverResultProtocol
 
 
-def plot_residuals(result: SolverResult, *, ax: "plt.Axes | None" = None) -> "plt.Axes | None":
+def plot_residuals(result: SolverResult, *, ax: "plt.Axes | None" = None, tol: float | None = None) -> "plt.Axes | None":
     if plt is None:
         return None
     if ax is None:
         _, ax = plt.subplots()
-    ax.semilogy(result.residuals, marker="o")
+    ax.semilogy(result.residuals) #, marker="o")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Residual norm")
-    ax.set_title("GMRES convergence")
+    if tol is not None:
+        ax.axhline(y=tol, color="red", linestyle="--", linewidth=1.2,
+                   label=f"tolerance = {tol:.0e}")
+        ax.legend()
     return ax
+
 
 
 def plot_field(field: np.ndarray, shape: Iterable[int], *, ax: "plt.Axes | None" = None) -> "plt.Axes | None":
