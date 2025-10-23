@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, Tuple
+from dataclasses import dataclass, field
+from typing import Protocol, Tuple, Union, Any
 
 import numpy as np
 
 from .config import GridSpec
-
-
-from typing import Tuple, Any
 
 
 class Load(Protocol):
@@ -24,10 +21,26 @@ class Load(Protocol):
 
 @dataclass(frozen=True)
 class PointSource:
-    """Load representing a single impulse on the grid."""
+    """Load representing a single impulse on the grid.
 
-    location: Tuple[float, ...]
+    Parameters
+    ----------
+    location : Tuple[float, ...] | str
+        Physical coordinates (one per dimension) OR a keyword:
+        - "centre"/"center"/"middle"
+        - "origin"/"zero"
+        - "random" (uses `self.seed` if present for reproducible RNG)
+    amplitude : float
+        Magnitude of the point source.
+    phase : float
+        Phase in radians (the complex value written is amplitude * exp(1j * phase)).
+    name : str
+        Label used in experiment summaries/plots.
+    """
+
+    location: Union[Tuple[float, ...], str]
     amplitude: float = 1.0
+    phase: float = 0.0      # <-- NEW
     name: str = "point_source"
 
     def build(self, grid: GridSpec) -> np.ndarray:
@@ -68,35 +81,22 @@ class PointSource:
             idx.append(int(round(np.clip(lattice, 0.0, n - 1))))
 
         # --- assemble RHS vector ---
-        rhs = np.zeros(grid.size, dtype=float)
-        rhs[_flatten_index(tuple(idx), grid.shape)] = float(self.amplitude)
+        rhs = np.zeros(grid.size, dtype=np.complex128)
+        lin = _flatten_index(tuple(idx), grid.shape)
+        rhs[lin] = float(self.amplitude) * np.exp(1j * float(self.phase))
         return rhs
 
 
 @dataclass
 class RandomPointSource:
-    """
-    Randomized point source with random amplitude, phase, and lattice location.
-
-    Parameters
-    ----------
-    amplitude_range : (float, float)
-        Uniform range for |A| (inclusive of endpoints in NumPy sense).
-    phase_range : (float, float)
-        Uniform range for phase in radians.
-    interior_only : bool
-        If True and a dimension has size > 2, sample indices in [1, n-2] to avoid boundaries.
-    seed : int | None
-        RNG seed for reproducibility. If None, uses a non-deterministic seed.
-    """
     amplitude_range: Tuple[float, float] = (0.5, 1.5)
     phase_range: Tuple[float, float] = (0.0, 2*np.pi)
     interior_only: bool = True
     seed: int | None = None
+    name: str = "random_point_source"   # <-- add this
 
-    # Internal state (not in signature)
-    _rng: Any = None
-    _last: dict | None = None
+    _rng: Any = field(default=None, init=False, repr=False)
+    _last: dict | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         self._rng = np.random.default_rng(self.seed)
@@ -105,74 +105,146 @@ class RandomPointSource:
         idx = []
         for n in shape:
             if self.interior_only and n > 2:
-                i = int(self._rng.integers(1, n - 1))
+                idx.append(int(self._rng.integers(1, n-1)))
             else:
-                i = int(self._rng.integers(0, n))
-            idx.append(i)
+                idx.append(int(self._rng.integers(0, n)))
         return tuple(idx)
 
     def build(self, grid) -> np.ndarray:
-        """
-        Build a flattened complex RHS vector b with a single complex spike at a random index.
-        b[idx] = A * exp(1j * phase), with A, phase, and idx sampled randomly.
-        """
-        # Prefer grid.shape; fall back to grid.size as 1D
-        shape = getattr(grid, "shape", None)
-        if shape is None:
-            size = getattr(grid, "size", None)
-            if size is None:
-                raise ValueError("Grid must expose .shape or .size")
-            shape = (int(size),)
+        idx = self._sample_location(grid.shape)
+        A = self._rng.uniform(*self.amplitude_range)
+        phase = self._rng.uniform(*self.phase_range)
+        value = A * np.exp(1j * phase)
 
-        size = int(getattr(grid, "size", int(np.prod(shape))))
-        b = np.zeros(size, dtype=np.complex128)
+        rhs = np.zeros(grid.size, dtype=np.complex128)
+        lin = np.ravel_multi_index(idx, grid.shape)
+        rhs[lin] = value
+        self._last = {"A": A, "phase": phase, "lattice_idx": tuple(map(int, idx))}
+        return rhs
 
-        # Draw amplitude and phase
+@dataclass
+class RandomContinuousPointSource:
+    """
+    Random point source at a continuous (x,y), deposited bilinearly to the grid.
+    Keeps amplitude/phase sampling like RandomPointSource.
+    """
+    amplitude_range: Tuple[float, float] = (0.5, 1.5)
+    phase_range: Tuple[float, float] = (0.0, 2 * np.pi)
+    interior_margin_cells: int = 1    # keep at least this many cells from each boundary
+    seed: int | None = None
+    name: str = "random_continuous_point_source"
+
+    _rng: Any = field(default=None, init=False, repr=False)
+    _last: dict | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self):
+        self._rng = np.random.default_rng(self.seed)
+
+    def build(self, grid: GridSpec) -> np.ndarray:
+        if grid.dims != 2:
+            raise ValueError("RandomContinuousPointSource currently supports 2D grids only")
+        nx, ny = grid.shape
+        hx, hy = grid.spacing
+        Lx, Ly = grid.lengths
+
+        # interior margin in *physical* units
+        mx = max(0, self.interior_margin_cells) * hx
+        my = max(0, self.interior_margin_cells) * hy
+
+        x = float(self._rng.uniform(mx, Lx - mx))
+        y = float(self._rng.uniform(my, Ly - my))
+
         A = float(self._rng.uniform(*self.amplitude_range))
         phase = float(self._rng.uniform(*self.phase_range))
+        value = A * np.exp(1j * phase)
 
-        # Pick random lattice index and map to linear
-        lattice_idx = self._sample_location(tuple(int(s) for s in shape))
-        lin_idx = int(np.ravel_multi_index(lattice_idx, shape))
+        rhs = np.zeros(grid.size, dtype=np.complex128)
+        _bilinear_deposit(rhs, grid, x, y, value)
 
-        b[lin_idx] = A * np.exp(1j * phase)
+        self._last = {"A": A, "phase": phase, "xy": (x, y)}
+        return rhs
 
-        # Keep last sample for debugging/labels
-        self._last = {
-            "A": A,
-            "phase": phase,
-            "lattice_idx": lattice_idx,
-            "lin_idx": lin_idx,
-        }
-        return b
+def _bilinear_deposit(rhs: np.ndarray, grid: GridSpec, x: float, y: float, value: complex) -> None:
+    """Deposit `value` at physical (x,y) onto the 2×2 neighboring nodes with bilinear weights."""
+    nx, ny = grid.shape
+    hx, hy = grid.spacing
+
+    # convert to lattice coordinates (node i at i*hx)
+    u = np.clip(x / hx, 0.0, nx - 1.0)
+    v = np.clip(y / hy, 0.0, ny - 1.0)
+
+    i0 = int(np.floor(u));  j0 = int(np.floor(v))
+    i1 = min(i0 + 1, nx - 1); j1 = min(j0 + 1, ny - 1)
+
+    tx = float(u - i0); ty = float(v - j0)
+
+    w00 = (1 - tx) * (1 - ty)
+    w10 = tx * (1 - ty)
+    w01 = (1 - tx) * ty
+    w11 = tx * ty
+
+    rhs[_flatten_index((i0, j0), grid.shape)] += w00 * value
+    rhs[_flatten_index((i1, j0), grid.shape)] += w10 * value
+    rhs[_flatten_index((i0, j1), grid.shape)] += w01 * value
+    rhs[_flatten_index((i1, j1), grid.shape)] += w11 * value
 
 
-# --- OPTIONAL: if you have a build_load helper, ensure it accepts any object with .build ---
+
 def build_load(load, grid):
     """
-    Build a right-hand side vector `b` compatible with `grid`.
+    Build a right-hand side vector b compatible with `grid`.
 
-    Accepts:
-      - Known load classes (e.g., PointSource, PlaneWaveSource, RandomPointSource, ...)
-      - Any object with a `.build(grid)` method returning a flat array of length grid.size
+    Accepts any object with a `.build(grid)` method that returns either:
+      - a 1D array-like of length prod(grid.shape), or
+      - a 2D array-like with shape == grid.shape
 
     Returns
     -------
     np.ndarray
-        Flattened RHS vector (complex128 for safety).
+        Flattened, C-contiguous RHS (dtype complex128), length == grid.size.
     """
-    if hasattr(load, "build") and callable(load.build):
-        b = load.build(grid)
-    else:
+    if not (hasattr(load, "build") and callable(load.build)):
         raise TypeError(
             f"Unsupported load type: {type(load).__name__}. "
             "Provide an object with a `.build(grid)` method."
         )
-    b = np.asarray(b)
-    # Ensure complex dtype to support complex loads (plane waves, randomized phase)
-    if b.dtype not in (np.complex64, np.complex128, np.complex256):
+
+    b = load.build(grid)
+    b = np.asarray(b)  # zero-copy when possible
+
+    # Normalize shape: accept either flat or grid-shaped inputs
+    expected_shape = tuple(getattr(grid, "shape", ()))
+    expected_size = int(np.prod(expected_shape)) if expected_shape else b.size
+
+    if b.ndim == 2 and b.shape == expected_shape:
+        # grid-shaped -> flatten
+        b = b.ravel(order="C")
+    elif b.ndim == 1 and b.size == expected_size:
+        # already flat -> keep
+        pass
+    elif b.size == expected_size:
+        # different ndim but total size matches -> reshape then flatten
+        b = np.reshape(b, expected_shape).ravel(order="C")
+    else:
+        raise ValueError(
+            f"Load produced array with shape {b.shape} (size {b.size}), "
+            f"but grid expects size {expected_size} (shape {expected_shape})."
+        )
+
+    # Ensure complex dtype without touching non-portable dtypes (like np.complex256)
+    if not np.issubdtype(b.dtype, np.complexfloating):
         b = b.astype(np.complex128, copy=False)
+
+    # Finalize memory layout (helps sparse ops / GMRES)
+    b = np.ascontiguousarray(b)
+
+    # Optional safety: check for NaN/Inf (comment out if you prefer silent pass-through)
+    if not np.all(np.isfinite(b)):
+        n_bad = np.size(b) - np.count_nonzero(np.isfinite(b))
+        raise ValueError(f"RHS contains {n_bad} non-finite entries (NaN/Inf).")
+
     return b
+
 
 def _flatten_index(idx: Tuple[int, ...], shape: Tuple[int, ...]) -> int:
     linear = 0
