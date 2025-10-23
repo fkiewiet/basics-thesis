@@ -26,7 +26,7 @@ __all__ = [
     "Load",
     "PointSource",
     "PlaneWaveSource",
-    "RandomSource",
+    "RandomPointSource",
     "build_load",
     "SolverResult",
     "GMRESOptions",

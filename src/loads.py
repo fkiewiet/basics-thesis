@@ -10,6 +10,9 @@ import numpy as np
 from .config import GridSpec
 
 
+from typing import Tuple, Any
+
+
 class Load(Protocol):
     """Protocol for building Helmholtz right-hand sides."""
 
@@ -70,6 +73,117 @@ class PointSource:
         return rhs
 
 
+@dataclass
+class RandomPointSource:
+    """
+    Randomized point source with random amplitude, phase, and lattice location.
+
+    Parameters
+    ----------
+    amplitude_range : (float, float)
+        Uniform range for |A| (inclusive of endpoints in NumPy sense).
+    phase_range : (float, float)
+        Uniform range for phase in radians.
+    interior_only : bool
+        If True and a dimension has size > 2, sample indices in [1, n-2] to avoid boundaries.
+    seed : int | None
+        RNG seed for reproducibility. If None, uses a non-deterministic seed.
+    """
+    amplitude_range: Tuple[float, float] = (0.5, 1.5)
+    phase_range: Tuple[float, float] = (0.0, 2*np.pi)
+    interior_only: bool = True
+    seed: int | None = None
+
+    # Internal state (not in signature)
+    _rng: Any = None
+    _last: dict | None = None
+
+    def __post_init__(self):
+        self._rng = np.random.default_rng(self.seed)
+
+    def _sample_location(self, shape: Tuple[int, ...]) -> Tuple[int, ...]:
+        idx = []
+        for n in shape:
+            if self.interior_only and n > 2:
+                i = int(self._rng.integers(1, n - 1))
+            else:
+                i = int(self._rng.integers(0, n))
+            idx.append(i)
+        return tuple(idx)
+
+    def build(self, grid) -> np.ndarray:
+        """
+        Build a flattened complex RHS vector b with a single complex spike at a random index.
+        b[idx] = A * exp(1j * phase), with A, phase, and idx sampled randomly.
+        """
+        # Prefer grid.shape; fall back to grid.size as 1D
+        shape = getattr(grid, "shape", None)
+        if shape is None:
+            size = getattr(grid, "size", None)
+            if size is None:
+                raise ValueError("Grid must expose .shape or .size")
+            shape = (int(size),)
+
+        size = int(getattr(grid, "size", int(np.prod(shape))))
+        b = np.zeros(size, dtype=np.complex128)
+
+        # Draw amplitude and phase
+        A = float(self._rng.uniform(*self.amplitude_range))
+        phase = float(self._rng.uniform(*self.phase_range))
+
+        # Pick random lattice index and map to linear
+        lattice_idx = self._sample_location(tuple(int(s) for s in shape))
+        lin_idx = int(np.ravel_multi_index(lattice_idx, shape))
+
+        b[lin_idx] = A * np.exp(1j * phase)
+
+        # Keep last sample for debugging/labels
+        self._last = {
+            "A": A,
+            "phase": phase,
+            "lattice_idx": lattice_idx,
+            "lin_idx": lin_idx,
+        }
+        return b
+
+
+# --- OPTIONAL: if you have a build_load helper, ensure it accepts any object with .build ---
+def build_load(load, grid):
+    """
+    Build a right-hand side vector `b` compatible with `grid`.
+
+    Accepts:
+      - Known load classes (e.g., PointSource, PlaneWaveSource, RandomPointSource, ...)
+      - Any object with a `.build(grid)` method returning a flat array of length grid.size
+
+    Returns
+    -------
+    np.ndarray
+        Flattened RHS vector (complex128 for safety).
+    """
+    if hasattr(load, "build") and callable(load.build):
+        b = load.build(grid)
+    else:
+        raise TypeError(
+            f"Unsupported load type: {type(load).__name__}. "
+            "Provide an object with a `.build(grid)` method."
+        )
+    b = np.asarray(b)
+    # Ensure complex dtype to support complex loads (plane waves, randomized phase)
+    if b.dtype not in (np.complex64, np.complex128, np.complex256):
+        b = b.astype(np.complex128, copy=False)
+    return b
+
+def _flatten_index(idx: Tuple[int, ...], shape: Tuple[int, ...]) -> int:
+    linear = 0
+    stride = 1
+    for i, size in zip(reversed(idx), reversed(shape)):
+        linear += int(i) * stride
+        stride *= size
+    return linear
+
+
+
 
 @dataclass(frozen=True)
 class PlaneWaveSource:
@@ -92,30 +206,3 @@ class PlaneWaveSource:
         phase_field = sum(axis * component for axis, component in zip(mesh, direction))
         values = np.exp(1j * (phase_field + self.phase))
         return values.reshape(-1)
-
-
-@dataclass(frozen=True)
-class RandomSource:
-    """Gaussian random forcing for stress-testing solvers."""
-
-    seed: int | None = None
-    name: str = "random"
-
-    def build(self, grid: GridSpec) -> np.ndarray:
-        rng = np.random.default_rng(self.seed)
-        return rng.standard_normal(grid.size)
-
-
-def build_load(load: Load, grid: GridSpec) -> np.ndarray:
-    """Helper mirroring the protocol."""
-
-    return load.build(grid)
-
-
-def _flatten_index(idx: Tuple[int, ...], shape: Tuple[int, ...]) -> int:
-    linear = 0
-    stride = 1
-    for i, size in zip(reversed(idx), reversed(shape)):
-        linear += int(i) * stride
-        stride *= size
-    return linear
