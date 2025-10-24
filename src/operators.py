@@ -288,3 +288,20 @@ def _flatten_index(idx: Sequence[int], shape: Sequence[int]) -> int:
 def _ensure_sparse() -> None:
     if sparse is None:  # pragma: no cover
         raise ImportError("scipy.sparse is required for operator assembly") from _sparse_import_error
+    
+
+
+
+
+# returns function u(2,H,W)->(2,H,W)
+def make_field_operator(A, shape):
+    import numpy as np
+    from scipy.sparse.linalg import LinearOperator
+    H,W = shape
+    def apply(u_ch):
+        u = (u_ch[0] + 1j*u_ch[1]).reshape(-1)
+        Au = A @ u
+        Au = Au.reshape(shape)
+        return np.stack([Au.real, Au.imag], axis=0)
+    return apply
+
