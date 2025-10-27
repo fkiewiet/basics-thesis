@@ -140,3 +140,75 @@ def direct_solve(A, b, options: Optional[DirectOptions] = None):
         info=info,
         residuals=None,
     )
+
+
+
+
+# === PML-backed Helmholtz helpers ===========================================
+from .operators import helmholtz_operator  # local package import
+
+def direct_solve_helmholtz(
+    *,
+    shape: tuple[int, ...],
+    lengths: tuple[float, ...],
+    k: float,
+    rhs: np.ndarray,
+    dtype: np.dtype = np.complex128,
+    pml=None,
+    options: Optional[DirectOptions] = None,
+):
+    """
+    Assemble the Helmholtz operator A = (-Δ - k^2) with optional PML and solve A u = rhs.
+    Returns a SimpleNamespace like direct_solve(...), with .solution, .converged, .info.
+
+    Parameters
+    ----------
+    shape, lengths : grid definition (same as elsewhere in src)
+    k              : wavenumber
+    rhs            : right-hand side (1D ndarray, flattened in the same ordering as assembly)
+    dtype          : complex dtype
+    pml            : PMLConfig or None (Dirichlet if None)
+    options        : DirectOptions (method, pivots, etc.)
+    """
+    A = helmholtz_operator(shape=shape, lengths=lengths, k=k, dtype=dtype, pml=pml)
+    return direct_solve(A, rhs, options=options)
+
+
+def solve_helmholtz_field(
+    *,
+    shape: tuple[int, ...],
+    lengths: tuple[float, ...],
+    k: float,
+    rhs: np.ndarray,
+    dtype: np.dtype = np.complex128,
+    pml=None,
+) -> np.ndarray:
+    """
+    Convenience wrapper that just returns the solution array (np.ndarray).
+    Useful when dataset builders expect a plain vector rather than a result object.
+    """
+    res = direct_solve_helmholtz(shape=shape, lengths=lengths, k=k, rhs=rhs, dtype=dtype, pml=pml)
+    return res.solution
+
+
+def direct_solve_auto(
+    *,
+    shape: tuple[int, ...],
+    lengths: tuple[float, ...],
+    k: float,
+    rhs: np.ndarray,
+    use_pml: bool = False,
+    pml=None,
+    dtype: np.dtype = np.complex128,
+    options: Optional[DirectOptions] = None,
+):
+    """
+    One entry point you can switch in notebooks:
+      - use_pml=False  -> Dirichlet
+      - use_pml=True   -> PML (requires pml=PMLConfig)
+    """
+    pml_cfg = pml if use_pml else None
+    return direct_solve_helmholtz(
+        shape=shape, lengths=lengths, k=k, rhs=rhs, dtype=dtype, pml=pml_cfg, options=options
+    )
+# ============================================================================

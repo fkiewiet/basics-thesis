@@ -10,7 +10,14 @@ except Exception:  # not installed / local dev
 # Public API (relative imports because this file lives inside the package)
 from .config import GridSpec, HelmholtzConfig, SweepConfig
 from .grid import build_grid
-from .operators import Discretisation, FiniteDifference, assemble_operator
+
+from .operators import (
+    FiniteDifference,
+    laplacian_operator,
+    helmholtz_operator,
+    FDConfig,
+    PMLConfig,
+)
 from .loads import Load, PointSource, PlaneWaveSource, RandomPointSource, build_load
 from .solvers import GMRESOptions, SolverResult, gmres_solve
 from .experiments import run_experiment
