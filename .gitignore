@@ -1,2 +1,24 @@
+# Ignore local Python virtual environments
 .venv/
-.venv/
+venv/
+env/
+
+# Ignore Python build and cache files
+__pycache__/
+*.pyc
+
+# Ignore Jupyter autosave checkpoints
+.ipynb_checkpoints/
+
+# Ignore data and output runs (large generated files)
+data/runs/
+data/_tmp_saves/
+
+# Ignore trained models and temporary tensors
+*.pt
+*.pth
+*.safetensors
+
+# Optional: VS Code / IDE settings
+.vscode/
+.idea/
