@@ -199,8 +199,29 @@ class FiniteDifference:
             Id = eye(shape[d], dtype=self.cfg.dtype, format="csc") if d != ax else Lax
             result = Id if result is None else kron(result, Id, format="csc")
         return result.tocsc()
+    
+    # ------------- axis expansion helper --------------
+
+    def _expand_axis_to_full(
+        self,
+        shape: Tuple[int, ...],
+        axis_vals: NDArray[np.complex128],
+        ax: int,
+    ) -> NDArray[np.complex128]:
+        """
+        Repeat a 1D array axis_vals (length n_ax) across the other axes to
+        produce a flattened (N,) vector consistent with our C-order layout.
+        """
+        target_shape = tuple(shape)                     # (n0, n1, ..., n_{d-1})
+        reshape = [1] * len(shape)
+        reshape[ax] = shape[ax]
+        arr = axis_vals.reshape(reshape)                # (1, ..., n_ax, ..., 1)
+        full = np.broadcast_to(arr, target_shape)       # (n0, n1, ..., n_{d-1})
+        return full.astype(np.complex128).ravel(order="C")
+
 
     # ---------- PML assembly ----------
+
 
     def _assemble_pml_helmholtz_like(
         self,
@@ -211,41 +232,50 @@ class FiniteDifference:
         pml: PMLConfig,
     ) -> csc_matrix:
         """
-        Assemble Σ_j ∂/∂x_j [(1/s_j) ∂u/∂x_j]  +  k^2 S0 u  with Dirichlet-style
-        stencil inside, complex stretching s_j in the PML collar.
-
-        Discretization per axis j:
-          L_j u ≈ -(1/h_j^2) * [ a_{i+1/2} (u_{i+1} - u_i) - a_{i-1/2} (u_i - u_{i-1}) ],
-        where a = 1 / s_j and s_j varies only along axis j. Boundaries use the
-        usual reduced stencil (Dirichlet style row).
+        Assemble  Σ_j ∂_{x_j}( S_j ∂_{x_j} u ) + k^2 S0 u
+        using diagonal, separable PML stretching:
+            s_j(x_j) = 1 + i σ_j(x_j) / k
+        with
+            S0 = ∏_j s_j,   and   S_j = S0 / s_j^2.
+        We approximate the divergence form by left-multiplying each placed
+        1D second-derivative with diag(S_j_full). This fixes the missing
+        (s_other / s_self) factors and yields physically reasonable PML
+        with minimal refactor.
         """
         dims = len(shape)
-        # Build stretching arrays per axis
+        N = int(np.prod(shape))
+
+        # per-axis stretching s_j(x_j)
         s_axes: List[NDArray[np.complex128]] = []
         for ax in range(dims):
-            s_axes.append(self._stretch_axis(shape[ax], lengths[ax], k=k, pml=pml))
+            s_axes.append(self._stretch_axis(shape[ax], lengths[ax], k=k, pml=pml))  # (n_ax,)
 
-        # Axis operators (variable-coefficient 1D) placed via Kronecker
+        # S0(x) on full grid (length N)
+        S0_diag = self._tensor_product_pointwise_product(s_axes)   # (N,)
+
+        # Build sum_j diag(S_j_full) @ L_j , where L_j is the placed Dirichlet -d2/dx_j^2
         L_sum = None
         for ax in range(dims):
-            n = shape[ax]
-            h = lengths[ax] / (n - 1)
-            s = s_axes[ax]  # shape (n,)
-            a = 1.0 / s     # coefficient for divergence-form diffusion
+            n_ax = shape[ax]
+            h_ax = lengths[ax] / (n_ax - 1)
 
-            L1 = self._varcoef_second_derivative_dirichlet(a, h)  # csc (n x n)
+            # 1D -d2/dx^2 (Dirichlet) along axis ax, lifted to ND
+            L1 = self._second_derivative_1d_dirichlet(n_ax, h_ax).astype(self.cfg.dtype)
+            Lax = self._place_axis(L1, shape, ax)  # (N x N)
 
-            # Place along axis ax
-            Term_ax = self._place_axis(L1.astype(self.cfg.dtype), shape, ax)
+            # s_j(x) expanded to the full grid and S_j = S0 / s_j^2
+            sj_full = self._expand_axis_to_full(shape, s_axes[ax], ax)          # (N,)
+            Sj_full = S0_diag / (sj_full * sj_full)                              # (N,)
+            Sj = spdiags(Sj_full.astype(self.cfg.dtype), 0, N, N)               # diag(S_j)
+
+            Term_ax = Sj @ Lax
             L_sum = Term_ax if L_sum is None else (L_sum + Term_ax)
 
-        # Mass term: k^2 * S0 * I, where S0 = Π_j s_j  (pointwise).
-        # Realistically, S0 varies across the grid; implement as diagonal mass.
-        # Construct S0 as Kronecker sum of per-axis diag(s_j) expanded across other axes.
-        S0_diag = self._tensor_product_pointwise_product(s_axes)  # (N,) complex
-        M = spdiags(S0_diag.astype(self.cfg.dtype), 0, S0_diag.size, S0_diag.size).tocsc()
+        # Mass term: k^2 S0 u  (diag on full grid)
+        M = spdiags(S0_diag.astype(self.cfg.dtype), 0, N, N).tocsc()
 
         return (L_sum + (k**2) * M).tocsc()
+
 
     @staticmethod
     def _varcoef_second_derivative_dirichlet(a: NDArray[np.complex128], h: float) -> csc_matrix:

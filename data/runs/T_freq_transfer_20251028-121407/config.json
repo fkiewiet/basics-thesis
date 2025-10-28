@@ -1,0 +1,16 @@
+{
+  "model": "SimpleFNO",
+  "in_ch": 3,
+  "out_ch": 2,
+  "width": 48,
+  "modes": [
+    12,
+    12
+  ],
+  "layers": 4,
+  "epochs": 50,
+  "batch_size": 8,
+  "lr": 0.001,
+  "dataset": "data_transfer",
+  "timestamp": "2025-10-28 12:14:07"
+}

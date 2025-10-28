@@ -1,0 +1,32 @@
+{
+  "task": "(f,k)->u",
+  "model": "SimpleFNO",
+  "in_ch": 3,
+  "out_ch": 2,
+  "width": 48,
+  "modes": [
+    12,
+    12
+  ],
+  "layers": 4,
+  "epochs": 20,
+  "batch_size": 8,
+  "lr": 0.001,
+  "dataset": "data_direct",
+  "grid": {
+    "shape": [
+      60,
+      60
+    ],
+    "lengths": [
+      1.0,
+      1.0
+    ]
+  },
+  "pml": {
+    "thickness": 10,
+    "m": 3,
+    "sigma_max": 60.0
+  },
+  "created": "2025-10-28 12:35:43"
+}

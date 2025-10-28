@@ -1,0 +1,3 @@
+task,run_dir,epochs,batch_size,lr,created
+(f,k)->u,c:\Users\31624\Documents\MIT\Programming\basics-thesis\data\runs\fk_direct_20251028-123543,20,8,0.001,2025-10-28 12:35:43
+(u_low,k_high)->u_high,c:\Users\31624\Documents\MIT\Programming\basics-thesis\data\runs\freq_transfer_20251028-123611,20,8,0.001,2025-10-28 12:36:11
